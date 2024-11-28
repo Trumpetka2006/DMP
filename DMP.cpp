@@ -1,8 +1,16 @@
 // #include "bmp280.hpp"
+#include "hardware/adc.h"
 #include "hardware/i2c.h"
+#include "hardware/rtc.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
+#include "pico/util/datetime.h"
 // #include "sim800l.h"
+#include <cstdint>
+#include <hardware/gpio.h>
+#include <pico.h>
+#include <pico/time.h>
+#include <pico/types.h>
 #include <stdio.h>
 // I2C defines
 // This example will use I2C0 on GPIO8 (SDA) and GPIO9 (SCL) running at 400KHz.
@@ -17,6 +25,19 @@
 // Use pins 4 and 5 for UART1
 // Pins can be changed, see the GPIO function select table in the datasheet for
 // information on GPIO assignments
+
+// RTC
+//******************************* */
+datetime_t t = {.year = 2020,
+                .month = 06,
+                .day = 05,
+                .dotw = 5, // 0 is Sunday, so 5 is Friday
+                .hour = 15,
+                .min = 45,
+                .sec = 00};
+
+// BMP280
+//***************************** */
 #define UART_TX_PIN 0
 #define UART_RX_PIN 1
 
@@ -229,6 +250,60 @@ void bmp280_senzor_init() {
 }
 
 #endif
+
+void init_all() {
+  gpio_init(15); // Door End Stop
+  gpio_set_dir(15, GPIO_IN);
+  gpio_pull_up(15);
+
+  gpio_init(25); // Build-in LED
+  gpio_set_dir(25, GPIO_OUT);
+
+  gpio_init(16);
+  gpio_init(17);
+  gpio_set_dir(16, GPIO_OUT);
+  gpio_set_dir(17, GPIO_OUT);
+
+  adc_init();
+  adc_gpio_init(27);
+  adc_gpio_init(28);
+}
+uint32_t get_current(uint adc_channel) {
+  // const uint32_t conversion_factor = 3300 / (1 << 12);
+  const float adc_const = 3.3 / (1 << 12);
+  const int amp_const = 123;
+  float voltage_33;
+  uint voltage_5;
+  float current;
+  adc_select_input(adc_channel);
+  voltage_33 = adc_read() * adc_const;
+  current = (voltage_33 - 1680) * amp_const;
+  // return current;
+  return voltage_33;
+}
+
+void door_control(bool state) {
+  // 0-CLOSE | 1-OPEN
+  uint16_t timeout = 0;
+  if (state) {
+    gpio_put(16, 1);
+    timeout = 2800;
+  } else {
+    gpio_put(17, 1);
+    timeout = 2800;
+  }
+
+  while (timeout > 0) {
+    timeout--;
+    // Check current!
+    // Watch Light Gate!
+
+    sleep_ms(1);
+  }
+
+  gpio_put(16, 0);
+  gpio_put(17, 0);
+}
 /*
   M     M      A      II  N    N
   MMM MMM     A A     II  NN   N
@@ -239,8 +314,21 @@ void bmp280_senzor_init() {
  */
 
 int main() {
+  const int amp_offset = 1680;
+  const float conversion_factor = 3.3f / (1 << 12);
+
+  char datetime_buf[256];
+  char *datetime_str = &datetime_buf[0];
+
+  rtc_init();
+
+  rtc_set_datetime(&t);
 
   stdio_init_all();
+
+  init_all();
+
+  gpio_put(25, 1);
 
   bmp280_senzor_init();
 
@@ -271,7 +359,7 @@ int main() {
   // In a default system, printf will also output via the default UART
 
   // Send out a string, with CR/LF conversions
-  uart_puts(UART_ID, " Hello, UART!\n");
+  uart_puts(UART_ID, " o - open; c - close; h - help\n");
 
   // For more examples of UART use see
   // https: //github.com/raspberrypi/pico-examples/tree/master/uart
@@ -290,13 +378,38 @@ int main() {
     sleep_ms(1000);
   }
 
+  while (0) {
+    if (gpio_get(15)) {
+      gpio_put(25, 1);
+    } else {
+      gpio_put(25, 0);
+    }
+  }
+
+  uint32_t x = get_current(1);
+  char buff[20];
+  sprintf(buff, "%u \n", x);
   while (1) {
-    uart_puts(UART_ID, "Press p!\n");
     switch (uart_getc(UART_ID)) {
-    case 'p':
-      uart_putc(UART_ID, 'p');
-      uart_putc(UART_ID, '\n');
+    case 'h':
+      uart_puts(UART_ID, "\ro - Open door; c - Close door; h - Show this "
+                         "page; t - Prints system time; ");
+      uart_putc(UART_ID, 0x0A);
+      // uart_putc(UART_ID, '\n');
       break;
+    case 'o':
+      gpio_put(25, 1);
+      door_control(1);
+      break;
+    case 'c':
+      gpio_put(25, 0);
+      door_control(0);
+      break;
+    case 't':
+      rtc_get_datetime(&t);
+      datetime_to_str(datetime_str, sizeof(datetime_buf), &t);
+      sprintf(buff, "\r%s", datetime_str);
+      uart_puts(UART_ID, buff);
     }
   }
 }
