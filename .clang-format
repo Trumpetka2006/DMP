@@ -1,3 +1,7 @@
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+
 # AlignTrailingComments: true
 # AllowShortFunctionsOnASingleLine: false
 # AllowShortIfStatementsOnASingleLine: true
