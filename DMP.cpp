@@ -345,7 +345,7 @@ int main() {
     // bmp280_init();
     // sim800l_init();
     //  I2C Initialisation. Using it at 400Khz.
-    //  For more examples of I2C use see
+    //  For more exam of I2C use see
     //  https://github.com/raspberrypi/pico-examples/tree/master/i2c
 
     // Set up our UART
